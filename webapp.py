@@ -37,7 +37,7 @@ def predict():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Flask app exposing yolov5 models")
-    parser.add_argument("--port", default=8080, type=int, help="port number")
+    # parser.add_argument("--port", default=8080, type=int, help="port number")
     args = parser.parse_args()
 
     model = torch.hub.load('ultralytics/yolov5', 
@@ -45,4 +45,4 @@ if __name__ == "__main__":
                                             path='best.pt', 
                                             force_reload=True) # force_reload = recache latest code
     model.eval()
-    app.run(host="0.0.0.0", port=args.port)  # debug=True causes Restarting with stat
+    app.run(debug=True)  # debug=True causes Restarting with stat
