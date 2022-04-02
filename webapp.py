@@ -14,14 +14,8 @@ app = Flask(__name__)
 @app.route("/", methods=["GET", "POST"])
 def predict():
     if request.method == "POST":
-        if "file" not in request.files:
-            return redirect(request.url)
-        file = request.files["file"]
-        if not file:
-            return
 
-        img_bytes = file.read()
-        img = Image.open(io.BytesIO(img_bytes))
+        img = Image.open(request.files['file'].stream)
         results = model(img, size=640)
 
         # for debugging
@@ -39,13 +33,10 @@ def predict():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Flask app exposing yolov5 models")
-    # parser.add_argument("--port", default=8080, type=int, help="port number")
-    args = parser.parse_args()
 
     model = torch.hub.load('ultralytics/yolov5', 
                                             'custom', 
                                             path='best.pt', 
                                             force_reload=True) # force_reload = recache latest code
     model.eval()
-    app.run(debug=True)  # debug=True causes Restarting with stat
+    app.run()  # debug=True causes Restarting with stat
