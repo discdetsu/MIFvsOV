@@ -4,8 +4,8 @@ torchvision==0.12.0+cpu
 Flask==2.1.1
 gunicorn==20.1.0
 numpy==1.22.3
-opencv-python==4.5.5.64
 pandas==1.4.1
 Pillow==8.4.0
 PyYAML==6.0
 tqdm==4.63.1
+opencv-python-headless
