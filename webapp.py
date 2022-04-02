@@ -10,6 +10,11 @@ from flask import Flask, render_template, request, redirect, send_file
 
 app = Flask(__name__)
 
+model = torch.hub.load('ultralytics/yolov5', 
+                                            'custom', 
+                                            path='best.pt', 
+                                            force_reload=True) # force_reload = recache latest code
+model.eval()
 
 @app.route("/", methods=["GET", "POST"])
 def predict():
@@ -33,10 +38,4 @@ def predict():
 
 
 if __name__ == "__main__":
-
-    model = torch.hub.load('ultralytics/yolov5', 
-                                            'custom', 
-                                            path='best.pt', 
-                                            force_reload=True) # force_reload = recache latest code
-    model.eval()
-    app.run()  # debug=True causes Restarting with stat
+    app.run()
