@@ -1,0 +1,309 @@
+{
+	"openapi": "3.1.0",
+	"info": {
+		"title": "MIFvsOV",
+		"version": "2.0.0"
+	},
+	"paths": {
+		"/api/health": {
+			"get": {
+				"summary": "Health",
+				"operationId": "health_api_health_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Health"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/model": {
+			"get": {
+				"summary": "Model Info",
+				"operationId": "model_info_api_model_get",
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ModelInfo"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"/api/detect": {
+			"post": {
+				"summary": "Detect",
+				"operationId": "detect_api_detect_post",
+				"parameters": [
+					{
+						"name": "conf",
+						"in": "query",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "number",
+									"maximum": 1,
+									"minimum": 0
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Conf"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"multipart/form-data": {
+							"schema": {
+								"$ref": "#/components/schemas/Body_detect_api_detect_post"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Successful Response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/DetectResponse"
+								}
+							}
+						}
+					},
+					"413": {
+						"description": "File too large"
+					},
+					"415": {
+						"description": "Not a JPEG/PNG"
+					},
+					"422": {
+						"description": "Validation Error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	},
+	"components": {
+		"schemas": {
+			"Body_detect_api_detect_post": {
+				"properties": {
+					"file": {
+						"type": "string",
+						"contentMediaType": "application/octet-stream",
+						"title": "File"
+					}
+				},
+				"type": "object",
+				"required": ["file"],
+				"title": "Body_detect_api_detect_post"
+			},
+			"DetectResponse": {
+				"properties": {
+					"image": {
+						"$ref": "#/components/schemas/ImageSize"
+					},
+					"detections": {
+						"items": {
+							"$ref": "#/components/schemas/Detection"
+						},
+						"type": "array",
+						"title": "Detections"
+					},
+					"inference_ms": {
+						"type": "number",
+						"title": "Inference Ms"
+					},
+					"model": {
+						"$ref": "#/components/schemas/ModelNames"
+					}
+				},
+				"type": "object",
+				"required": ["image", "detections", "inference_ms", "model"],
+				"title": "DetectResponse"
+			},
+			"Detection": {
+				"properties": {
+					"class_id": {
+						"type": "integer",
+						"title": "Class Id"
+					},
+					"label": {
+						"type": "string",
+						"title": "Label"
+					},
+					"confidence": {
+						"type": "number",
+						"maximum": 1.0,
+						"minimum": 0.0,
+						"title": "Confidence"
+					},
+					"x1": {
+						"type": "number",
+						"title": "X1"
+					},
+					"y1": {
+						"type": "number",
+						"title": "Y1"
+					},
+					"x2": {
+						"type": "number",
+						"title": "X2"
+					},
+					"y2": {
+						"type": "number",
+						"title": "Y2"
+					}
+				},
+				"type": "object",
+				"required": ["class_id", "label", "confidence", "x1", "y1", "x2", "y2"],
+				"title": "Detection"
+			},
+			"HTTPValidationError": {
+				"properties": {
+					"detail": {
+						"items": {
+							"$ref": "#/components/schemas/ValidationError"
+						},
+						"type": "array",
+						"title": "Detail"
+					}
+				},
+				"type": "object",
+				"title": "HTTPValidationError"
+			},
+			"Health": {
+				"properties": {
+					"status": {
+						"type": "string",
+						"title": "Status"
+					},
+					"model_loaded": {
+						"type": "boolean",
+						"title": "Model Loaded"
+					}
+				},
+				"type": "object",
+				"required": ["status", "model_loaded"],
+				"title": "Health"
+			},
+			"ImageSize": {
+				"properties": {
+					"width": {
+						"type": "integer",
+						"title": "Width"
+					},
+					"height": {
+						"type": "integer",
+						"title": "Height"
+					}
+				},
+				"type": "object",
+				"required": ["width", "height"],
+				"title": "ImageSize"
+			},
+			"ModelInfo": {
+				"properties": {
+					"names": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Names"
+					},
+					"img_size": {
+						"type": "integer",
+						"title": "Img Size"
+					},
+					"conf": {
+						"type": "number",
+						"title": "Conf"
+					},
+					"detect_conf": {
+						"type": "number",
+						"title": "Detect Conf"
+					},
+					"iou": {
+						"type": "number",
+						"title": "Iou"
+					}
+				},
+				"type": "object",
+				"required": ["names", "img_size", "conf", "detect_conf", "iou"],
+				"title": "ModelInfo"
+			},
+			"ModelNames": {
+				"properties": {
+					"names": {
+						"items": {
+							"type": "string"
+						},
+						"type": "array",
+						"title": "Names"
+					}
+				},
+				"type": "object",
+				"required": ["names"],
+				"title": "ModelNames"
+			},
+			"ValidationError": {
+				"properties": {
+					"loc": {
+						"items": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "integer"
+								}
+							]
+						},
+						"type": "array",
+						"title": "Location"
+					},
+					"msg": {
+						"type": "string",
+						"title": "Message"
+					},
+					"type": {
+						"type": "string",
+						"title": "Error Type"
+					},
+					"input": {
+						"title": "Input"
+					},
+					"ctx": {
+						"type": "object",
+						"title": "Context"
+					}
+				},
+				"type": "object",
+				"required": ["loc", "msg", "type"],
+				"title": "ValidationError"
+			}
+		}
+	}
+}
