@@ -29,11 +29,13 @@ export async function renderAnnotatedPng(
 		const pad = 3 * unit;
 		const h = 12 * unit + 2 * pad;
 		const w = ctx.measureText(text).width + 2 * pad;
+		// Keep the label inside the image: above the box if it fits, else inside; clamp horizontally.
+		const x = Math.max(0, Math.min(d.x1, canvas.width - w));
 		const y = d.y1 - h >= 0 ? d.y1 - h : d.y1;
 		ctx.fillStyle = color;
-		ctx.fillRect(d.x1, y, w, h);
+		ctx.fillRect(x, y, w, h);
 		ctx.fillStyle = '#fff';
-		ctx.fillText(text, d.x1 + pad, y + pad);
+		ctx.fillText(text, x + pad, y + pad);
 	}
 
 	return new Promise((resolve, reject) =>

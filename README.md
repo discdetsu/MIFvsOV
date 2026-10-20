@@ -12,17 +12,31 @@ Example images batch:<br><br>
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    subgraph Browser["Browser · SvelteKit SPA"]
+        direction TB
+        U([Drop JPEG/PNG]) --> V{Type & size OK?}
+        V -- no --> E[Show error]
+        R[SVG overlay<br/>colour-coded boxes] --> F[Slider & class toggles<br/>filter client-side]
+        F --> D[Download<br/>annotated PNG]
+    end
+
+    subgraph Server["FastAPI · Docker container"]
+        direction TB
+        A["POST /api/detect"] --> C{Valid image?}
+        C -- no --> X[413 / 415]
+        C -- yes --> L[EXIF orient<br/>+ letterbox]
+        L --> M[YOLOv5 forward<br/>best.pt · PyTorch]
+        M --> N[NMS<br/>conf ≥ 0.10]
+        N --> B[Rescale boxes to<br/>original pixels]
+    end
+
+    V -- yes: multipart upload --> A
+    B -- JSON detections --> R
 ```
-browser ── SvelteKit SPA (Svelte 5, Tailwind v4, shadcn-svelte)
-   │          draws boxes as an SVG overlay, client-side conf slider / class toggles
-   ▼
-FastAPI  ── POST /api/detect  -> JSON detections
-   │        GET  /api/model, /api/health
-   │        serves the SPA build as static files in production
-   ▼
-Detector ── letterbox → YOLOv5 forward (plain PyTorch) → NMS → rescale
-            loads the original best.pt via a small vendored copy of YOLOv5's model classes
-```
+
+`best.pt` is loaded once at startup through a small vendored copy of YOLOv5's model classes. The server returns every detection with confidence ≥ 0.10, and all further filtering happens in the browser without another request.
 
 | Path                            | What                                                                       |
 | ------------------------------- | -------------------------------------------------------------------------- |

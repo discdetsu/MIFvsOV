@@ -4,6 +4,7 @@
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
+	import MicroscopeIcon from '@lucide/svelte/icons/microscope';
 	import { detect, getModelInfo, type DetectResponse, type ModelInfo } from '#lib/api.js';
 	import { renderAnnotatedPng } from '#lib/annotate.js';
 	import {
@@ -93,7 +94,11 @@
 
 <div class="mx-auto flex min-h-dvh max-w-6xl flex-col px-4 py-8 sm:px-6">
 	<header class="mb-8 flex items-center gap-4">
-		<img src="/ov-logo.png" alt="" class="size-14 rounded-full object-cover shadow-sm" />
+		<div
+			class="grid size-14 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-sm"
+		>
+			<MicroscopeIcon class="size-7" aria-hidden="true" />
+		</div>
 		<div>
 			<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">MIF & OV Egg Detection</h1>
 			<p class="text-sm text-muted-foreground">
