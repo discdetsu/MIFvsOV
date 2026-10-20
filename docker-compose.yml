@@ -1,0 +1,45 @@
+# Production-like:  docker compose up --build            -> http://localhost:8000
+# Dev (hot reload): docker compose --profile dev up      -> http://localhost:5173
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "8000:8000"
+    environment:
+      MIFVSOV_NUM_THREADS: ${MIFVSOV_NUM_THREADS:-}
+    restart: unless-stopped
+
+  backend-dev:
+    profiles: [dev]
+    build:
+      context: .
+      target: backend-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - backend-venv:/opt/venv
+    environment:
+      MIFVSOV_CORS_ORIGINS: '["http://localhost:5173"]'
+
+  frontend-dev:
+    profiles: [dev]
+    image: node:24-slim
+    working_dir: /app/frontend
+    command: sh -c "corepack enable && pnpm install && pnpm dev --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app/frontend
+      - frontend-node-modules:/app/frontend/node_modules
+    environment:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      API_URL: http://backend-dev:8000
+    depends_on:
+      - backend-dev
+
+volumes:
+  backend-venv:
+  frontend-node-modules:

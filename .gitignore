@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Frontend build copied in by Docker / local prod runs
+backend/static/
+
+# Editors / OS
+.DS_Store
+.idea/

@@ -1,0 +1,15 @@
+.git
+.github
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+frontend/build
+frontend/.svelte-kit
+frontend/test-results
+frontend/playwright-report
+backend/static
+backend/tests
+batch.jpg
