@@ -4,11 +4,66 @@ Minute intestinal fluke (MIF) egg and _Opisthorchis viverrini_ (OV) egg detectio
 
 Upload a micrograph and the YOLOv5 model (`best.pt`, trained in 2022) finds MIF and OV eggs. The browser draws the boxes and lets you filter them by confidence and class, then download an annotated PNG.
 
-Training notebook:
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1AQdwrTNCkxA3wdRwyt-6WTWPSt4MeMim?usp=sharing)<br>
-Dataset: [Eggs.zip](https://drive.google.com/file/d/1eo3-4ODNEwVi85MNfGSvZ3XWetZEgHem/view?usp=sharing) (from Phramongkutklao hospital's laboratory and ICIP 2022 challenge's dataset[^1])<br><br>
+**Live demo:** https://mif-vs-ov.onrender.com/ (hosted on Render's free tier, so the first request after it has been idle may take a minute while the app wakes up)
+
+> [!WARNING]
+> This is a student research project, not a medical device. Its "MIF" class was trained mostly on the wrong parasite (see [Limitations](#limitations)). Do not use it for diagnosis.
+
+## Background
+
+Liver fluke infection by _Opisthorchis viverrini_ is a major public-health problem in Thailand, especially in the North and Northeast, where it spreads through raw or undercooked freshwater fish. Chronic infection causes cholangiocarcinoma (bile duct cancer), which has a poor prognosis, and the WHO classifies _O. viverrini_ as a Group 1 carcinogen.
+
+Screening is done with the modified Kato-Katz technique: a stool smear is examined under a microscope for eggs. The problem is that OV eggs look almost the same as minute intestinal fluke eggs (heterophyids such as _Haplorchis_ spp.) in both size and shape, so even experts struggle to tell them apart. MIF has no known link to cholangiocarcinoma, so the difference matters clinically. Today the reliable way to separate them is copro-DNA PCR, which takes 3–4 hours, needs a laboratory and costly reagents, and is often unavailable in rural areas.
+
+This project, a Kasetsart University computer science senior project (academic year 2021–22), tests whether a deep learning detector can separate the two eggs from a plain micrograph, as a screening aid where trained microscopists are scarce.
+
+## Model and data
+
+- **Dataset:** 2,053 images ([Eggs.zip](https://drive.google.com/file/d/1eo3-4ODNEwVi85MNfGSvZ3XWetZEgHem/view?usp=sharing)):
+  - 53 micrographs from Phramongkutklao Hospital's laboratory (34 OV, 19 MIF), labelled by hand with LabelImg
+  - 1,000 OV and 1,000 "MIF" images from the ICIP 2022 Parasitic Egg Detection and Classification challenge[^1], with their COCO boxes converted to YOLO format
+- **Split:** 80 / 10 / 10 train / validation / test, at random with scikit-learn.
+- **Training:** YOLOv5s from the COCO-pretrained `yolov5s.pt`, 640 px, 10 epochs, on Google Colab Pro. Training notebook: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1AQdwrTNCkxA3wdRwyt-6WTWPSt4MeMim?usp=sharing)
+
 Example images batch:<br><br>
 <img src="batch.jpg" alt="Example images batch" width="50%"/>
+
+## Results
+
+These are the 2022 numbers, all measured on the **validation** split (see [Limitations](#limitations)).
+
+**Detection** (YOLOv5, boxes):
+
+| mAP@0.5 | mAP@0.5:0.95 | Precision | Recall |
+| ------- | ------------ | --------- | ------ |
+| 0.978   | 0.844        | 0.950     | 0.986  |
+
+**Classification** (MIF vs OV, from the detector's confusion matrix), compared with the best two-stage pipeline (crop each egg, then classify the crop with a CNN):
+
+| Model                                    | Evaluated on | Accuracy | Precision | Recall | F1    |
+| ---------------------------------------- | ------------ | -------- | --------- | ------ | ----- |
+| **YOLOv5s, single-stage (shipped)**      | validation   | 0.990    | 0.982     | 1.000  | 0.991 |
+| InceptionV3 + augmentation, two-stage    | validation   | 0.992    | 0.986     | 0.997  | 0.992 |
+| InceptionV3 + augmentation, two-stage    | test         | 0.971    | 0.973     | 0.973  | 0.973 |
+
+The two-stage experiments also tried a CNN trained from scratch and InceptionV3 transfer learning, each with and without CLAHE / brightness-contrast / cutout augmentation. All four scored 0.945–0.992 accuracy on validation; augmentation and transfer learning helped. YOLOv5 was shipped because it does detection and classification in one pass, and it beat the two-stage pipeline's test score.
+
+Failure cases seen when testing on new images:
+
+- Faint, translucent eggs are missed, and stool debris that looks like an egg is detected instead.
+- One egg sometimes gets two overlapping boxes.
+- Some eggs are not detected at all.
+
+## Limitations
+
+- **The "MIF" class is mostly the wrong parasite.** The ICIP 2022 dataset has no minute intestinal fluke class. Its _Fasciolopsis buski_ images were used as MIF by mistake. _F. buski_ is the **giant** intestinal fluke, and its eggs are about 130–150 µm long, roughly five times the length of OV and MIF eggs (about 25–30 µm). So roughly 1,000 of the 1,019 "MIF" images are not MIF, and the model mostly learned to separate _F. buski_ from OV, which is much easier than the real MIF vs OV problem. Only the 19 hospital images show real MIF eggs.
+- **The scores don't measure the real task.** Because of the mislabelling, the high scores above say little about how well the model separates real MIF from OV. A real MIF egg may well be classified as OV.
+- **Validation set only.** The YOLOv5 numbers come from the validation split, which was also used to choose `best.pt` during training, so they are optimistic. The detector was never scored on the held-out test split. The two-stage model's drop from 0.992 (validation) to 0.971 (test) gives a sense of the gap.
+- **Too little real data.** There are only 53 local micrographs, and only a handful of them can be in the validation split. Most images come from one public dataset with its own microscopes, staining and imaging conditions, so performance on other labs' slides is unknown. The labels are morphological, not confirmed by PCR.
+- **Short training:** 10 epochs with no hyperparameter search.
+- **Two classes only.** Every detection is forced into MIF or OV. Other parasite eggs, artefacts and debris have no "other" class.
+
+To fix this, the model should be retrained on real heterophyid / lecithodendriid egg images (ideally PCR-confirmed), evaluated once on a test split it has never seen, and given an "other" class.
 
 ## Architecture
 
@@ -186,7 +241,7 @@ After changing the API schema, run `pnpm gen:api` in `frontend/` to regenerate t
 
 ## Credits
 
-Kasetsart University.
+Senior project, Department of Computer Science, Faculty of Science, Kasetsart University. Advisor: Asst. Prof. Dr. Pakaket Wattuya. Co-advisors: Asst. Prof. Dr. Chakrit Watcharopas and Dr. Thammakorn Saethang. Thanks to Phramongkutklao Hospital for the micrographs.
 
 `backend/app/inference/models/` holds a trimmed copy of [YOLOv5](https://github.com/ultralytics/yolov5) by Ultralytics, from the version used to train `best.pt`, which was licensed under **GPL-3.0** (see `backend/app/inference/models/LICENSE`).
 
