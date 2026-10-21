@@ -102,3 +102,32 @@ jobs:
         run: docker exec app python -c "import importlib.util as u; assert u.find_spec('torch') is None"
       - if: failure()
         run: docker logs app
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, frontend, e2e, docker]
+    runs-on: ubuntu-latest
+    environment: # creates the entry under the repo's Deployments page
+      name: production
+      url: https://mif-vs-ov.onrender.com
+    concurrency: production
+    steps:
+      - name: Deploy this commit on Render and wait until it is live
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+        run: |
+          api=https://api.render.com/v1/services/$SERVICE_ID/deploys
+          id=$(curl -fsS -X POST "$api" -H "Authorization: Bearer $RENDER_API_KEY" \
+                 -H "Content-Type: application/json" -d '{"commitId":"${{ github.sha }}"}' | jq -r .id)
+          echo "Render deploy $id"
+          for i in $(seq 90); do
+            status=$(curl -fsS "$api/$id" -H "Authorization: Bearer $RENDER_API_KEY" | jq -r .status)
+            echo "$status"
+            case $status in
+              live) exit 0 ;;
+              *failed|canceled|deactivated) exit 1 ;;
+            esac
+            sleep 20
+          done
+          exit 1
