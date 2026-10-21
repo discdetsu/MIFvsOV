@@ -14,7 +14,7 @@ Example images batch:<br><br>
 
 ```mermaid
 flowchart LR
-    subgraph Browser["Browser · SvelteKit SPA"]
+    subgraph Browser["Browser · SvelteKit single-page app"]
         direction TB
         U([Drop JPEG/PNG]) --> V{Type & size OK?}
         V -- no --> E[Show error]
@@ -25,10 +25,10 @@ flowchart LR
     subgraph Server["FastAPI · Docker container"]
         direction TB
         A["POST /api/detect"] --> C{Valid image?}
-        C -- no --> X[413 / 415]
+        C -- no --> X[413 Too large /<br/>415 Unsupported type]
         C -- yes --> L[EXIF orient<br/>+ letterbox]
-        L --> M[YOLOv5 forward<br/>best.pt · PyTorch]
-        M --> N[NMS<br/>conf ≥ 0.10]
+        L --> M[YOLOv5 forward<br/>PyTorch or ONNX Runtime]
+        M --> N[Non-maximum suppression<br/>confidence ≥ 0.10]
         N --> B[Rescale boxes to<br/>original pixels]
     end
 
@@ -36,14 +36,15 @@ flowchart LR
     B -- JSON detections --> R
 ```
 
-`best.pt` is loaded once at startup through a small vendored copy of YOLOv5's model classes. The server returns every detection with confidence ≥ 0.10, and all further filtering happens in the browser without another request.
+The model is loaded once at startup, either `best.pt` through a small vendored copy of YOLOv5's model classes (PyTorch) or its export `best.onnx` (ONNX Runtime), see [Inference runtime](#inference-runtime). Pre- and post-processing are plain NumPy, shared by both. The server returns every detection with confidence ≥ 0.10, and all further filtering happens in the browser without another request.
 
 | Path                            | What                                                                       |
 | ------------------------------- | -------------------------------------------------------------------------- |
 | `backend/app/main.py`           | FastAPI app factory; loads the model in `lifespan`, mounts the SPA         |
 | `backend/app/api/routes.py`     | `/api/health`, `/api/model`, `/api/detect`                                 |
-| `backend/app/inference/`        | `detector.py` (pre/post-processing) and `models/` (trimmed YOLOv5 classes) |
+| `backend/app/inference/`        | `detector.py` (NumPy pre/post-processing), `backends/` (torch, onnx), `models/` (trimmed YOLOv5 classes) |
 | `backend/weights/best.pt`       | the 2022 weights, byte-identical (sha256 `3df91454…5cc9f`)                 |
+| `backend/weights/best.onnx`     | exported from `best.pt` by `backend/scripts/export_onnx.py`                |
 | `backend/tests/`                | API tests + parity tests against the original 2022 pipeline               |
 | `frontend/`                     | SvelteKit app (`adapter-static`)                                           |
 | `Dockerfile`, `docker-compose.yml` | multi-stage build: node → python slim                                   |
@@ -100,22 +101,58 @@ Settings are read from environment variables with the `MIFVSOV_` prefix (see `ba
 
 | Variable                 | Default                 | Meaning                                       |
 | ------------------------ | ----------------------- | --------------------------------------------- |
+| `MIFVSOV_RUNTIME`        | `torch`                 | `torch` or `onnx`, see below                  |
 | `MIFVSOV_DETECT_CONF`    | `0.10`                  | server-side confidence floor                  |
 | `MIFVSOV_CONF`           | `0.25`                  | default slider value shown to clients         |
-| `MIFVSOV_IOU`            | `0.45`                  | NMS IoU threshold                             |
+| `MIFVSOV_IOU`            | `0.45`                  | non-maximum suppression IoU threshold         |
 | `MIFVSOV_MAX_UPLOAD_MB`  | `5`                     | upload limit                                  |
-| `MIFVSOV_NUM_THREADS`    | torch default           | `torch.set_num_threads`                       |
+| `MIFVSOV_NUM_THREADS`    | library default         | torch / onnxruntime intra-op threads          |
 | `MIFVSOV_CORS_ORIGINS`   | `[]`                    | JSON list, only needed for cross-origin dev   |
+
+`.env.example` lists every setting. Copy it to `.env` for `docker compose`.
+
+### Inference runtime
+
+The same model runs on either runtime. Both pass the strict 2022 parity tests.
+
+|                                   | `torch` (default)  | `onnx`               |
+| --------------------------------- | ------------------ | -------------------- |
+| Weights                           | `best.pt`          | `best.onnx`          |
+| Docker image (disk / compressed)  | 1.68 GB / 388 MB   | 605 MB / 170 MB      |
+| Start → healthy at 0.1 CPU        | 47 s               | 31 s                 |
+| Idle memory                       | 254 MB             | 162 MB               |
+| Peak memory (see below)           | 366 MB             | 321 MB               |
+
+The Docker image installs only one runtime, so choose it at build time. The image sets `MIFVSOV_RUNTIME` to match:
+
+```sh
+docker build --target runtime --build-arg RUNTIME=onnx .
+RUNTIME=onnx docker compose up --build    # or put RUNTIME=onnx in .env
+```
+
+On Render, set `RUNTIME=onnx` as a service environment variable; Render's docs say it passes environment variables to `docker build` as build args. Check `/api/health` and the image size in the deploy log after the first deploy. Keep `MIFVSOV_NUM_THREADS=1` on small instances. Locally, `uv sync` installs both runtimes, so `MIFVSOV_RUNTIME=onnx uv run uvicorn app.main:app` works as is. If the selected runtime isn't installed, startup fails with a message naming the build arg.
+
+**After changing `best.pt`,** re-export and commit `best.onnx`:
+
+```sh
+cd backend
+uv run python -m scripts.export_onnx          # exports, then compares torch and onnxruntime on the fixtures
+uv run python -m scripts.export_onnx --check  # what CI runs: is best.onnx exported from today's best.pt?
+```
+
+The export stores the class names, stride and `best.pt`'s sha256 as ONNX metadata, so the ONNX image never unpickles `best.pt`. Raw outputs agree to < 0.01 px on boxes and < 1e-5 on scores. `best.onnx` is 28 MB because `best.pt` stores fp16 weights and the export is fp32.
+
+**Memory:** `backend/scripts/memcheck.sh IMAGE` runs an image like Render's free tier (`--memory=512m --cpus=0.1`). It posts a 4032×3024 JPEG and a 2400×1800 PNG once each, then 10 sequentially and 2 concurrently, and reports cgroup memory; the table above shows its numbers. Before the NumPy preprocessing and `MALLOC_ARENA_MAX=2`, the torch image was OOM-killed on the first 12 MP photo.
 
 ## Tests
 
 ```sh
-cd backend  && uv run pytest              # API + parity tests
+cd backend  && uv run pytest              # API + parity tests, on both runtimes
 cd frontend && pnpm check && pnpm lint && pnpm test
 cd frontend && pnpm test:e2e              # Playwright, against the real backend
 ```
 
-**Parity:** `backend/tests/fixtures/parity.json` holds detections from the original 2022 pipeline (torch 1.11, `torch.hub.load('yolov5-master', 'custom', ...)`, size 640). The test requires the same classes and count, box IoU ≥ 0.99 and confidence within ±0.01. JPEG decoding changed between Pillow 8.4 and today's libjpeg-turbo, which alone moves confidences by a few hundredths on busy images. So `batch_decoded-pillow8.png` stores the exact pixels the old stack saw for `batch.jpg`, and a separate, looser test covers the modern decoder.
+**Parity:** `backend/tests/fixtures/parity.json` holds detections from the original 2022 pipeline (torch 1.11, `torch.hub.load('yolov5-master', 'custom', ...)`, size 640). The test requires the same classes and count, box IoU ≥ 0.99 and confidence within ±0.01. JPEG decoding changed between Pillow 8.4 and today's libjpeg-turbo, which alone moves confidences by a few hundredths on busy images. So `batch_decoded-pillow8.png` stores the exact pixels the old stack saw for `batch.jpg`, and a separate, looser test covers the modern decoder. Every detector and API test runs on both `torch` and `onnx`. `test_backends.py` checks that `best.onnx` is current and equivalent, and `test_preprocess.py` compares the NumPy letterbox and non-maximum suppression with the torch/torchvision code they replaced: non-maximum suppression is identical, and the letterbox differs by at most one level on ≤ 0.0012% of values.
 
 After changing the API schema, run `pnpm gen:api` in `frontend/` to regenerate the TypeScript types from FastAPI's OpenAPI spec.
 

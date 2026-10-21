@@ -12,3 +12,4 @@ backend/static/
 # Editors / OS
 .DS_Store
 .idea/
+.env

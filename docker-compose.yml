@@ -1,14 +1,19 @@
 # Production-like:  docker compose up --build            -> http://localhost:8000
 # Dev (hot reload): docker compose --profile dev up      -> http://localhost:5173
+# RUNTIME=onnx in .env (or the shell) builds the smaller ONNX Runtime image instead of torch.
 services:
   app:
     build:
       context: .
       target: runtime
+      args:
+        RUNTIME: ${RUNTIME:-torch}
     ports:
       - "8000:8000"
-    environment:
-      MIFVSOV_NUM_THREADS: ${MIFVSOV_NUM_THREADS:-}
+    # Optional overrides, see .env.example.
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
 
   backend-dev:

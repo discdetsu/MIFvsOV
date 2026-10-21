@@ -38,6 +38,19 @@ def model_info(request: Request) -> ModelInfo:
     )
 
 
+def _decode(file: UploadFile) -> Image.Image:
+    try:
+        img = Image.open(file.file)
+        if img.format not in ALLOWED_FORMATS:
+            raise HTTPException(415, "Only JPEG and PNG images are supported")
+        img.load()
+    except Image.DecompressionBombError as e:
+        raise HTTPException(413, "Image dimensions are too large") from e
+    except (UnidentifiedImageError, OSError) as e:
+        raise HTTPException(415, "Could not decode image") from e
+    return img
+
+
 # Sync endpoint: FastAPI runs it in its threadpool, so inference doesn't block the event loop.
 @router.post("/detect", responses={413: {"description": "File too large"}, 415: {"description": "Not a JPEG/PNG"}})
 def detect(
@@ -53,17 +66,8 @@ def detect(
     if file.size is not None and file.size > settings.max_upload_bytes:
         raise HTTPException(413, f"Image must be at most {settings.max_upload_mb:g} MB")
 
-    try:
-        img = Image.open(file.file)
-        if img.format not in ALLOWED_FORMATS:
-            raise HTTPException(415, "Only JPEG and PNG images are supported")
-        img.load()
-    except Image.DecompressionBombError as e:
-        raise HTTPException(413, "Image dimensions are too large") from e
-    except (UnidentifiedImageError, OSError) as e:
-        raise HTTPException(415, "Could not decode image") from e
-
-    result = detector.detect(img, settings.detect_conf if conf is None else conf)
+    # Decoded straight into detect() with no local reference, so the pixels can be freed before inference.
+    result = detector.detect(_decode(file), settings.detect_conf if conf is None else conf)
     return DetectResponse(
         image=ImageSize(width=result.width, height=result.height),
         detections=result.detections,

@@ -13,3 +13,4 @@ frontend/playwright-report
 backend/static
 backend/tests
 batch.jpg
+.env

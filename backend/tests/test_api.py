@@ -4,15 +4,17 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 
-from .conftest import IMAGES
+from .conftest import IMAGES, RUNTIMES
 
 SAMPLE = IMAGES / "Opisthorchis viverrine_1007.jpg"
 
 
-@pytest.fixture(scope="module")
-def client(tmp_path_factory):
+@pytest.fixture(scope="module", params=RUNTIMES)
+def client(request, tmp_path_factory):
     # No static dir, so only the API is mounted; 1 MB limit so the sample (~160 KB) fits.
-    settings = Settings(static_dir=tmp_path_factory.mktemp("nostatic") / "missing", max_upload_mb=1)
+    settings = Settings(
+        runtime=request.param, static_dir=tmp_path_factory.mktemp("nostatic") / "missing", max_upload_mb=1
+    )
     with TestClient(create_app(settings)) as c:
         yield c
 
