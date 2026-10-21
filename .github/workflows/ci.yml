@@ -17,11 +17,13 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: uv sync --frozen
+      - run: uv sync --frozen # dev group: both runtimes
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run mypy app
-      - run: uv run pytest -v # includes the parity test against the 2022 stack
+      - run: uv run mypy app scripts
+      - name: best.onnx exported from the current best.pt
+        run: uv run python -m scripts.export_onnx --check
+      - run: uv run pytest -v # parity tests against the 2022 stack, on both torch and onnx
 
   frontend:
     runs-on: ubuntu-latest
@@ -72,6 +74,9 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runtime: [torch, onnx]
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
@@ -79,7 +84,21 @@ jobs:
         with:
           context: .
           target: runtime
-          push: false
-          tags: mifvsov:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: RUNTIME=${{ matrix.runtime }}
+          load: true
+          tags: mifvsov:${{ matrix.runtime }}
+          cache-from: type=gha,scope=${{ matrix.runtime }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.runtime }}
+      - name: Smoke test
+        run: |
+          docker run -d --name app -p 8000:8000 -e MIFVSOV_NUM_THREADS=1 mifvsov:${{ matrix.runtime }}
+          for i in $(seq 60); do curl -fs localhost:8000/api/health && break; sleep 2; done
+          curl -fs localhost:8000/api/health | grep -q '"model_loaded":true'
+          docker exec app python -c "import os; assert os.environ['MIFVSOV_RUNTIME'] == '${{ matrix.runtime }}'"
+          curl -fs -F "file=@backend/tests/fixtures/images/Opisthorchis viverrine_1007.jpg;type=image/jpeg" \
+            localhost:8000/api/detect | tee /dev/stderr | grep -q '"label":"OV"'
+      - name: ONNX image has no torch
+        if: matrix.runtime == 'onnx'
+        run: docker exec app python -c "import importlib.util as u; assert u.find_spec('torch') is None"
+      - if: failure()
+        run: docker logs app

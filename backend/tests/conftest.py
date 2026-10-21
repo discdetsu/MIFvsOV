@@ -15,9 +15,12 @@ def settings() -> Settings:
     return Settings()
 
 
-@pytest.fixture(scope="session")
-def detector(settings: Settings) -> Detector:
-    return Detector(settings.weights_path, img_size=settings.img_size, iou=settings.iou)
+RUNTIMES = ["torch", "onnx"]
+
+
+@pytest.fixture(scope="session", params=RUNTIMES)
+def detector(request, settings: Settings) -> Detector:
+    return Detector.from_settings(settings.model_copy(update={"runtime": request.param}))
 
 
 @pytest.fixture(scope="session")

@@ -14,13 +14,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.detector = Detector(
-            settings.weights_path,
-            img_size=settings.img_size,
-            iou=settings.iou,
-            max_det=settings.max_det,
-            num_threads=settings.num_threads,
-        )
+        app.state.detector = Detector.from_settings(settings)
         yield
 
     app = FastAPI(title="MIFvsOV", version="2.0.0", lifespan=lifespan)

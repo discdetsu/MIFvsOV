@@ -26,10 +26,12 @@ CMD ["sh", "-c", "uv sync --frozen && uvicorn app.main:app --host 0.0.0.0 --port
 
 # ---- 3. Runtime ----
 FROM python-base AS runtime
+# Inference runtime, torch or onnx: only that one is installed (the onnx image has no torch).
+ARG RUNTIME=torch
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+    uv sync --frozen --no-dev --no-install-project --extra ${RUNTIME}
 COPY backend/app ./app
 COPY backend/weights ./weights
 COPY --from=frontend /app/frontend/build ./static
@@ -37,7 +39,11 @@ COPY --from=frontend /app/frontend/build ./static
 RUN useradd --create-home --uid 1000 app
 USER app
 
-ENV PORT=8000
+# glibc gives each threadpool thread its own malloc arena, which keeps freed image buffers:
+# capping arenas took peak memory for 2 concurrent 12 MP uploads from ~380 to ~270 MB.
+ENV PORT=8000 \
+    MIFVSOV_RUNTIME=${RUNTIME} \
+    MALLOC_ARENA_MAX=2
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
     CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/api/health')"
