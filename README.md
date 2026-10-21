@@ -36,7 +36,9 @@ flowchart LR
     B -- JSON detections --> R
 ```
 
-The model is loaded once at startup, either `best.pt` through a small vendored copy of YOLOv5's model classes (PyTorch) or its export `best.onnx` (ONNX Runtime), see [Inference runtime](#inference-runtime). Pre- and post-processing are plain NumPy, shared by both. The server returns every detection with confidence ≥ 0.10, and all further filtering happens in the browser without another request.
+- The model is loaded once at startup, on PyTorch (`best.pt`) or ONNX Runtime (`best.onnx`); see [Inference runtime](#inference-runtime).
+- Pre- and post-processing are plain NumPy, shared by both runtimes.
+- The server returns every detection with confidence ≥ 0.10. All further filtering happens in the browser, without another request.
 
 | Path                            | What                                                                       |
 | ------------------------------- | -------------------------------------------------------------------------- |
@@ -64,7 +66,10 @@ The model is loaded once at startup, either `best.pt` through a small vendored c
 }
 ```
 
-Box coordinates are pixels of the original image, after EXIF rotation. The server returns everything at or above 0.10, and the client's slider (default 0.25, the old app's threshold) filters without another request. Errors: `415` for a file that isn't JPEG/PNG or can't be decoded, `413` for one that's too large, `422` for a bad `conf`. Interactive docs are at `/docs`.
+- Box coordinates are pixels of the original image, after EXIF rotation.
+- The client's slider (default 0.25, the old app's threshold) filters the results locally.
+- Errors: `413` file too large, `415` not a decodable JPEG/PNG, `422` bad `conf`.
+- Interactive docs are at `/docs`.
 
 ## Run it
 
@@ -123,26 +128,36 @@ The same model runs on either runtime. Both pass the strict 2022 parity tests.
 | Idle memory                       | 254 MB             | 162 MB               |
 | Peak memory (see below)           | 366 MB             | 321 MB               |
 
-The Docker image installs only one runtime, so choose it at build time. The image sets `MIFVSOV_RUNTIME` to match:
+#### Choosing a runtime
 
 ```sh
+# Docker installs only one runtime, chosen at build time (the image sets MIFVSOV_RUNTIME to match)
 docker build --target runtime --build-arg RUNTIME=onnx .
 RUNTIME=onnx docker compose up --build    # or put RUNTIME=onnx in .env
+
+# Local: `uv sync` installs both, so just set the variable
+MIFVSOV_RUNTIME=onnx uv run uvicorn app.main:app
 ```
 
-On Render, set `RUNTIME=onnx` as a service environment variable; Render's docs say it passes environment variables to `docker build` as build args. Check `/api/health` and the image size in the deploy log after the first deploy. Keep `MIFVSOV_NUM_THREADS=1` on small instances. Locally, `uv sync` installs both runtimes, so `MIFVSOV_RUNTIME=onnx uv run uvicorn app.main:app` works as is. If the selected runtime isn't installed, startup fails with a message naming the build arg.
+If the selected runtime isn't installed, startup fails with a message naming the build arg.
 
-**After changing `best.pt`,** re-export and commit `best.onnx`:
+#### Re-exporting after changing `best.pt`
 
 ```sh
 cd backend
-uv run python -m scripts.export_onnx          # exports, then compares torch and onnxruntime on the fixtures
+uv run python -m scripts.export_onnx          # export, then compare torch and onnxruntime on the fixtures
 uv run python -m scripts.export_onnx --check  # what CI runs: is best.onnx exported from today's best.pt?
 ```
 
-The export stores the class names, stride and `best.pt`'s sha256 as ONNX metadata, so the ONNX image never unpickles `best.pt`. Raw outputs agree to < 0.01 px on boxes and < 1e-5 on scores. `best.onnx` is 28 MB because `best.pt` stores fp16 weights and the export is fp32.
+Commit the new `best.onnx`. Notes on the export:
 
-**Memory:** `backend/scripts/memcheck.sh IMAGE` runs an image like Render's free tier (`--memory=512m --cpus=0.1`). It posts a 4032×3024 JPEG and a 2400×1800 PNG once each, then 10 sequentially and 2 concurrently, and reports cgroup memory; the table above shows its numbers. Before the NumPy preprocessing and `MALLOC_ARENA_MAX=2`, the torch image was OOM-killed on the first 12 MP photo.
+- It stores the class names, stride and `best.pt`'s sha256 as metadata, so the ONNX image never unpickles `best.pt`.
+- Raw outputs match torch within 0.01 px on boxes and 1e-5 on scores.
+- It is 28 MB: `best.pt` stores fp16 weights, the export is fp32.
+
+#### Memory check
+
+`backend/scripts/memcheck.sh IMAGE` runs an image with 512 MB and 0.1 CPU. It posts a 4032×3024 JPEG and a 2400×1800 PNG (once each, then 10 in a row, then 2 at once) and reports cgroup memory. The table above shows its results.
 
 ## Tests
 
@@ -152,7 +167,20 @@ cd frontend && pnpm check && pnpm lint && pnpm test
 cd frontend && pnpm test:e2e              # Playwright, against the real backend
 ```
 
-**Parity:** `backend/tests/fixtures/parity.json` holds detections from the original 2022 pipeline (torch 1.11, `torch.hub.load('yolov5-master', 'custom', ...)`, size 640). The test requires the same classes and count, box IoU ≥ 0.99 and confidence within ±0.01. JPEG decoding changed between Pillow 8.4 and today's libjpeg-turbo, which alone moves confidences by a few hundredths on busy images. So `batch_decoded-pillow8.png` stores the exact pixels the old stack saw for `batch.jpg`, and a separate, looser test covers the modern decoder. Every detector and API test runs on both `torch` and `onnx`. `test_backends.py` checks that `best.onnx` is current and equivalent, and `test_preprocess.py` compares the NumPy letterbox and non-maximum suppression with the torch/torchvision code they replaced: non-maximum suppression is identical, and the letterbox differs by at most one level on ≤ 0.0012% of values.
+Every detector and API test runs on both `torch` and `onnx`.
+
+**Parity with 2022.** `backend/tests/fixtures/parity.json` holds detections from the original pipeline (torch 1.11, `torch.hub.load('yolov5-master', 'custom', ...)`, size 640). The test requires:
+
+- the same classes and count
+- box IoU ≥ 0.99
+- confidence within ±0.01
+
+JPEG decoding changed between Pillow 8.4 and today's libjpeg-turbo, which alone moves confidences by a few hundredths. So `batch_decoded-pillow8.png` stores the exact pixels the old stack saw for `batch.jpg`, and a separate, looser test covers the modern decoder.
+
+**Other checks:**
+
+- `test_backends.py`: `best.onnx` is exported from the current `best.pt` and matches torch.
+- `test_preprocess.py`: the NumPy code against the torch/torchvision code it replaced. Non-maximum suppression is identical; the letterbox differs by at most one level on ≤ 0.0012% of values.
 
 After changing the API schema, run `pnpm gen:api` in `frontend/` to regenerate the TypeScript types from FastAPI's OpenAPI spec.
 
