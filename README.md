@@ -182,6 +182,8 @@ The same model runs on either runtime. Both pass the strict 2022 parity tests.
 | Start → healthy at 0.1 CPU        | 47 s               | 31 s                 |
 | Idle memory                       | 254 MB             | 162 MB               |
 | Peak memory (see below)           | 366 MB             | 321 MB               |
+| Inference, 1 CPU (median / p90)   | 199 / 205 ms       | 158 / 162 ms         |
+| Inference, 0.1 CPU (median / p90) | 5.5 / 7.5 s        | 4.3 / 6.4 s          |
 
 #### Choosing a runtime
 
@@ -213,6 +215,10 @@ Commit the new `best.onnx`. Notes on the export:
 #### Memory check
 
 `backend/scripts/memcheck.sh IMAGE` runs an image with 512 MB and 0.1 CPU. It posts a 4032×3024 JPEG and a 2400×1800 PNG (once each, then 10 in a row, then 2 at once) and reports cgroup memory. The table above shows its results.
+
+#### Latency check
+
+`backend/scripts/latency.sh IMAGE [CPUS]` runs an image with 512 MB, one thread and the given CPU limit (default 0.1). It posts `batch.jpg` (1019×1075) 3 times to warm up, then 20 more times, and reports the median and p90 of `inference_ms` (preprocessing, forward pass and NMS, not upload or decoding). The table above shows its results, measured on an Intel i5-1135G7. At 0.1 CPU the container is throttled in bursts, so those numbers vary more from run to run.
 
 ## Tests
 
